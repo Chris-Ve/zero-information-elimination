@@ -154,6 +154,11 @@ arma::uvec num_same_class_neighbors(const arma::mat& data,
 
 // [[Rcpp::export]]
 Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
+
+  // init
+  vec unique_labels = unique(labels);
+  unsigned int c = unique_labels.size();
+
   // Initialize result vector
   arma::uvec res(data.n_rows);
   arma::uvec nn(data.n_rows);
@@ -184,17 +189,36 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
 
   arma::uvec nn_met_at_same = res == res(nn);
   arma::uvec uq = unique(res);
-  arma::uvec histo(uq.size());
-  histo = hist(res, uq);
+  umat histmat(uq.size(), c);
+  // histo = hist(res, uq);
 
-  unsigned int idx = index_max(uq % histo);
+  // unsigned int idx = index_max(uq % histo);
+  unsigned int idx = 0;
+  res %= nn_met_at_same;
+
+  // start for each class label
+  for (int i = 0; i < c; i++) {
+    uvec nnc = res(find(labels == unique_labels(i)));
+    uvec uqc = unique(nnc);
+    uvec histoc(uq.size());
+    histoc = hist(nnc, uq);
+    histmat.col(i) = histoc;
+    idx = index_max(uq % histoc);
+  }
+
+  // unsigned int maxval = histoc.col(idx);
+  // vec cent = arma::mean(data.rows( find(res == maxval) ));
+  int cent = 5;
+
+
 
   Rcpp::List out = Rcpp::List::create(Rcpp::Named("first_diff_class") = res,
                                       Rcpp::Named("nn_idx") = nn,
                                       Rcpp::Named("nn_met_at_same") = nn_met_at_same,
                                       Rcpp::Named("uniques") = uq,
-                                      Rcpp::Named("hist") = histo,
-                                      Rcpp::Named("max") = idx);
+                                      Rcpp::Named("hist") = histmat,
+                                      Rcpp::Named("max") = idx,
+                                      Rcpp::Named("cent") = cent);
   return out;
 }
 

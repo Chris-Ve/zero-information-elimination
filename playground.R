@@ -3,8 +3,7 @@ Rcpp::sourceCpp("ZIE.cpp")
 
 
 M <- rbind(g1,g2,g3) |> scale()
-group <- as.factor(c(rep("g1", 20), rep("g1", 20), rep("g2", 20)))
-
+group <- as.factor(c(rep("g1", 20), rep("g1", 20), rep("g2", 20))) |> as.integer()
 
 
 
@@ -22,6 +21,9 @@ M[drop(res$first_diff_class == 20 & mask == TRUE & group == "g1"),] |>
 
 
 points(x$centroids, col="green", cex=1.5, pch=19)
+x <- mean_shift(data, 20)
 most_frequent_row(x)
 
 
+table(res$first_diff_class[group==1])
+M[drop(res$first_diff_class == 20 & group==1),] |> points(col="blue", cex=1.4)
