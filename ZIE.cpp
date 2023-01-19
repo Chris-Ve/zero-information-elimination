@@ -152,75 +152,6 @@ arma::uvec num_same_class_neighbors(const arma::mat& data,
 
 
 
-// [[Rcpp::export]]
-Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
-
-  // init
-  vec unique_labels = unique(labels);
-  unsigned int c = unique_labels.size();
-
-  // Initialize result vector
-  arma::uvec res(data.n_rows);
-  arma::uvec nn(data.n_rows);
-
-
-  // Loop over each data point
-  for (int i = 0; i < data.n_rows; i++) {
-    // Get current data point
-    arma::rowvec x = data.row(i);
-
-    // Calculate distance from current data point to all other data points
-    mat m = data.each_row() - x;
-    arma::vec d = arma::sqrt(arma::sum(m % m, 1));
-
-    // Sort distances in ascending order and get the corresponding labels
-    arma::uvec sorted_idx = arma::sort_index(d);
-    nn(i) = sorted_idx(1);
-    arma::vec sorted_labels = labels.elem(sorted_idx);
-
-    // Loop over sorted labels and find the first label that is different from the current data point's label
-    for (size_t j = 0; j < sorted_labels.n_elem; j++) {
-      if (sorted_labels(j) != labels(i)) {
-        res(i) = j;
-        break;
-      }
-    }
-  }
-
-  arma::uvec nn_met_at_same = res == res(nn);
-  arma::uvec uq = unique(res);
-  umat histmat(uq.size(), c);
-  // histo = hist(res, uq);
-
-  // unsigned int idx = index_max(uq % histo);
-  unsigned int idx = 0;
-  res %= nn_met_at_same;
-
-  // start for each class label
-  for (int i = 0; i < c; i++) {
-    uvec nnc = res(find(labels == unique_labels(i)));
-    uvec uqc = unique(nnc);
-    uvec histoc(uq.size());
-    histoc = hist(nnc, uq);
-    histmat.col(i) = histoc;
-    idx = index_max(uq % histoc);
-  }
-
-  // unsigned int maxval = histoc.col(idx);
-  // vec cent = arma::mean(data.rows( find(res == maxval) ));
-  int cent = 5;
-
-
-
-  Rcpp::List out = Rcpp::List::create(Rcpp::Named("first_diff_class") = res,
-                                      Rcpp::Named("nn_idx") = nn,
-                                      Rcpp::Named("nn_met_at_same") = nn_met_at_same,
-                                      Rcpp::Named("uniques") = uq,
-                                      Rcpp::Named("hist") = histmat,
-                                      Rcpp::Named("max") = idx,
-                                      Rcpp::Named("cent") = cent);
-  return out;
-}
 
 
 
@@ -277,7 +208,7 @@ rowvec most_frequent_row(const mat &x) {
 
 
 // [[Rcpp::export]]
-Rcpp::List most_frequent_row2(const mat &x) {
+rowvec most_frequent_row2(const mat &x) {
 
   int n = x.n_rows, k = x.n_cols;
   uvec counts(n);
@@ -310,13 +241,13 @@ Rcpp::List most_frequent_row2(const mat &x) {
   Rcpp::List out = Rcpp::List::create(Rcpp::Named("row") = x.row(index_max(counts)),
                                       Rcpp::Named("idx") = index_max(counts));
 
-  return out;
+  return x.row(index_max(counts));
 }
 
 
 // [[Rcpp::export]]
-Rcpp::List mean_shift(const mat& data,
-                      int s,
+mat mean_shift(const mat& data,
+                      unsigned int s,
                       int maxiter = 50,
                       double etaX = 1e-5,
                       double r = 1) {
@@ -352,11 +283,92 @@ Rcpp::List mean_shift(const mat& data,
                                       Rcpp::Named("centroids") = rand_subset,
                                       Rcpp::Named("iterations") = iter,
                                       Rcpp::Named("eta") = eta);
-  return out;
+  return rand_subset;
 }
 
 
 
+
+
+
+// [[Rcpp::export]]
+Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
+
+  // init
+  vec unique_labels = unique(labels);
+  unsigned int c = unique_labels.size(), p = data.n_cols;
+
+  // Initialize result vector
+  arma::uvec res(data.n_rows);
+  arma::uvec nn(data.n_rows);
+
+
+  // Loop over each data point
+  for (int i = 0; i < data.n_rows; i++) {
+    // Get current data point
+    arma::rowvec x = data.row(i);
+
+    // Calculate distance from current data point to all other data points
+    mat m = data.each_row() - x;
+    arma::vec d = arma::sqrt(arma::sum(m % m, 1));
+
+    // Sort distances in ascending order and get the corresponding labels
+    arma::uvec sorted_idx = arma::sort_index(d);
+    nn(i) = sorted_idx(1);
+    arma::vec sorted_labels = labels.elem(sorted_idx);
+
+    // Loop over sorted labels and find the first label that is different from the current data point's label
+    for (size_t j = 0; j < sorted_labels.n_elem; j++) {
+      if (sorted_labels(j) != labels(i)) {
+        res(i) = j;
+        break;
+      }
+    }
+  }
+
+  arma::uvec nn_met_at_same = res == res(nn) && labels == labels(nn);
+  res %= nn_met_at_same;
+  arma::uvec uq = unique(res);
+  umat histmat(uq.size(), c);
+  // histo = hist(res, uq);
+
+  // unsigned int idx = index_max(uq % histo);
+  unsigned int idx = 0;
+  rowvec cent(p);
+
+
+  // start for each class label
+  for (int i = 0; i < c; i++) {
+    uvec current_class = labels == unique_labels(i);
+    uvec nnc = res(find(current_class));
+    uvec uqc = unique(nnc);
+    uvec histoc(uq.size());
+    histoc = hist(nnc, uq);
+    histmat.col(i) = histoc;
+    idx = index_max(uq % histoc);
+
+    unsigned int maxval = uq(idx);
+    uvec rr = find(res == maxval && current_class);
+    mat ms = mean_shift(data.rows(rr), rr.size());
+    cent = most_frequent_row2(ms);
+
+    // make a mat of size c, n (or n, c) and store for every class the
+    // indeces to drop. Drop after the foor loop.
+  }
+
+
+
+
+
+  Rcpp::List out = Rcpp::List::create(Rcpp::Named("first_diff_class") = res,
+                                      Rcpp::Named("nn_idx") = nn,
+                                      Rcpp::Named("nn_met_at_same") = nn_met_at_same,
+                                      Rcpp::Named("uniques") = uq,
+                                      Rcpp::Named("hist") = histmat,
+                                      Rcpp::Named("max") = idx,
+                                      Rcpp::Named("cent") = cent);
+  return out;
+}
 
 
 
