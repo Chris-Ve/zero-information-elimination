@@ -250,7 +250,7 @@ mat mean_shift(const mat& data,
                       unsigned int s,
                       int maxiter = 50,
                       double etaX = 1e-5,
-                      double r = 1) {
+                      double r = 0.1) {
 
   // initialization
   unsigned int n = data.n_rows, p = data.n_cols, iter;
@@ -295,6 +295,8 @@ mat mean_shift(const mat& data,
 Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
 
   // init
+  mat DATA = data;
+  vec LABELS = labels;
   vec unique_labels = unique(labels);
   unsigned int c = unique_labels.size(), n = data.n_rows, p = data.n_cols;
 
@@ -303,14 +305,14 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
 
 
   // Initialize result vector
-  arma::uvec res(data.n_rows);
-  arma::uvec nn(data.n_rows);
+  arma::uvec res(DATA.n_rows);
+  arma::uvec nn(DATA.n_rows);
 
 
   // Loop over each data point
-  for (int i = 0; i < data.n_rows; i++) {
+  for (int i = 0; i < DATA.n_rows; i++) {
     // Get current data point
-    arma::rowvec x = data.row(i);
+    arma::rowvec x = DATA.row(i);
 
     // Calculate distance from current data point to all other data points
     mat m = data.each_row() - x;
@@ -357,7 +359,7 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
     no_drop(i) = too_few;
     if (too_few) continue;
 
-    uvec sums = uq % histoc;
+    uvec sums = uq % histoc.replace(1, 0);
     idx = index_max(sums);
 
     unsigned int maxval = uq(idx);
@@ -369,18 +371,22 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
     new_cents.row(i) = cent;
     rm_idx.col(i) = rr;
   }
-  // Remove used rows
-  DATA.shed_rows(find( arma::mean(rm_idx, 1) == 1 ));
+
+  // Remove used rows & labels
+  DATA.shed_rows(find( arma::sum(rm_idx, 1) == 1 ));
+  LABELS.shed_rows(find( arma::sum(rm_idx, 1) == 1 ));
   unsigned int number_new_rows = c - sum(no_drop);
   n = DATA.n_rows + number_new_rows;
   DATA.resize(n, p);
+  LABELS.resize(n);
 
-  // Add new cents. Add new labels.
+  // Add new cents & new labels
   unsigned int inc = 0;
   for (int i = 0; i < c; i++) {
     if (no_drop(i) == 1) continue;
     else {
-      DATA.row(n-number_new_rows+inc);
+      DATA.row(n-number_new_rows+inc) = new_cents.row(i);
+      LABELS.row(n-number_new_rows+inc) = i+1;
       inc++;
     }
   }
@@ -393,9 +399,11 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
                                       Rcpp::Named("nn_met_at_same") = nn_met_at_same,
                                       Rcpp::Named("uniques") = uq,
                                       Rcpp::Named("hist") = histmat,
-                                      Rcpp::Named("drop") = drop,
+                                      Rcpp::Named("drop") = no_drop,
                                       Rcpp::Named("cents") = new_cents,
-                                      Rcpp::Named("rm_idx") = rm_idx);
+                                      Rcpp::Named("rm_idx") = rm_idx,
+                                      Rcpp::Named("data") = DATA,
+                                      Rcpp::Named("labels") = LABELS);
   return out;
 }
 
