@@ -296,7 +296,11 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
 
   // init
   vec unique_labels = unique(labels);
-  unsigned int c = unique_labels.size(), p = data.n_cols;
+  unsigned int c = unique_labels.size(), n = data.n_rows, p = data.n_cols;
+
+
+  // start iteration loop here
+
 
   // Initialize result vector
   arma::uvec res(data.n_rows);
@@ -330,11 +334,13 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
   res %= nn_met_at_same;
   arma::uvec uq = unique(res);
   umat histmat(uq.size(), c);
-  // histo = hist(res, uq);
 
-  // unsigned int idx = index_max(uq % histo);
+
   unsigned int idx = 0;
   rowvec cent(p);
+  umat rm_idx(n, c);
+  mat new_cents(c, p);
+  urowvec no_drop(c);
 
 
   // start for each class label
@@ -345,19 +351,41 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
     uvec histoc(uq.size());
     histoc = hist(nnc, uq);
     histmat.col(i) = histoc;
-    idx = index_max(uq % histoc);
+
+    unsigned int max_count = max(histoc.subvec(1, uq.size()-1));
+    bool too_few = max_count < 2;
+    no_drop(i) = too_few;
+    if (too_few) continue;
+
+    uvec sums = uq % histoc;
+    idx = index_max(sums);
 
     unsigned int maxval = uq(idx);
-    uvec rr = find(res == maxval && current_class);
-    mat ms = mean_shift(data.rows(rr), rr.size());
+    uvec rr = res == maxval && current_class;
+    uvec rr_s = find(rr==1);
+    mat ms = mean_shift(data.rows(rr_s), rr_s.size());
     cent = most_frequent_row2(ms);
 
-    // make a mat of size c, n (or n, c) and store for every class the
-    // indeces to drop. Drop after the foor loop.
+    new_cents.row(i) = cent;
+    rm_idx.col(i) = rr;
+  }
+  // Remove used rows
+  DATA.shed_rows(find( arma::mean(rm_idx, 1) == 1 ));
+  unsigned int number_new_rows = c - sum(no_drop);
+  n = DATA.n_rows + number_new_rows;
+  DATA.resize(n, p);
+
+  // Add new cents. Add new labels.
+  unsigned int inc = 0;
+  for (int i = 0; i < c; i++) {
+    if (no_drop(i) == 1) continue;
+    else {
+      DATA.row(n-number_new_rows+inc);
+      inc++;
+    }
   }
 
-
-
+  // incorporate DATA and add new labels.
 
 
   Rcpp::List out = Rcpp::List::create(Rcpp::Named("first_diff_class") = res,
@@ -365,8 +393,9 @@ Rcpp::List nearest_diff_class(const arma::mat& data, const arma::vec& labels) {
                                       Rcpp::Named("nn_met_at_same") = nn_met_at_same,
                                       Rcpp::Named("uniques") = uq,
                                       Rcpp::Named("hist") = histmat,
-                                      Rcpp::Named("max") = idx,
-                                      Rcpp::Named("cent") = cent);
+                                      Rcpp::Named("drop") = drop,
+                                      Rcpp::Named("cents") = new_cents,
+                                      Rcpp::Named("rm_idx") = rm_idx);
   return out;
 }
 
